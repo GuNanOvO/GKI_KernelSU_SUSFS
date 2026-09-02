@@ -328,14 +328,14 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             return
         logger.info("=== 应用 ZRAM (LZ4KD) 补丁 ===")
         self._chdir(self.work_dir / "common")
-        for src in [
+        for src, dst in [
             (self.sukisu_patch_dir / "other/zram/lz4k/include/linux", "include/linux/"),
             (self.sukisu_patch_dir / "other/zram/lz4k/lib", "lib/"),
             (self.sukisu_patch_dir / "other/zram/lz4k/crypto", "crypto/"),
-            (self.sukisu_patch_dir / "other/zram/lz4k_oplus", "lib/"),
+            (self.sukisu_patch_dir / "other/zram/lz4k_oplus", "lib/lz4k_oplus/"),
         ]:
-            if src[0].exists():
-                self._run_cmd(f"cp -r {src[0]}/* {src[1]}", check=False)
+            if src.exists():
+                self._run_cmd(f"mkdir -p {dst} && cp -r {src}/* {dst}")
         zram_patch_dir = self.sukisu_patch_dir / f"other/zram/zram_patch/{self.config.kernel_version}"
         for patch in ["lz4kd.patch", "lz4k_oplus.patch"]:
             p = zram_patch_dir / patch
