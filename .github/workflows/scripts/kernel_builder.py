@@ -257,6 +257,36 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
                 self._chdir(ksu_dir)
                 self._run_cmd(f"git checkout {self.config.kernelsu_commit}", check=False)
                 self._chdir(self.work_dir)
+        self.fix_kernel_umount_feature_set()
+
+    def fix_kernel_umount_feature_set(self):
+        logger.info("=== 修复 kernel_umount_feature_set 缺失 ===")
+        kfile = self.work_dir / "KernelSU/kernel/feature/kernel_umount.c"
+        if not kfile.exists():
+            logger.warning(f"未找到 KernelSU kernel_umount.c: {kfile}")
+            return
+        with open(kfile, "r") as f:
+            content = f.read()
+        if "static int kernel_umount_feature_set(u64 value)" in content:
+            logger.info("kernel_umount_feature_set 已存在，跳过修复")
+            return
+        handler = "static const struct ksu_feature_handler kernel_umount_handler = {"
+        if handler not in content:
+            logger.warning("未找到 kernel_umount_handler，跳过修复")
+            return
+        fix = (
+            "static int kernel_umount_feature_set(u64 value)\n"
+            "{\n"
+            "    bool enable = value != 0;\n"
+            "    ksu_kernel_umount_enabled = enable;\n"
+            "    pr_info(\"kernel_umount: set to %d\\n\", enable);\n"
+            "    return 0;\n"
+            "}\n\n"
+        )
+        content = content.replace(handler, fix + handler, 1)
+        with open(kfile, "w") as f:
+            f.write(content)
+        logger.info("已注入 kernel_umount_feature_set")
 
     def add_bbg(self):
         if not self.config.use_bbg:
