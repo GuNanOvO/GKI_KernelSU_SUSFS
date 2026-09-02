@@ -275,11 +275,26 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         if kconfig_file.exists():
             with open(kconfig_file, "r") as f:
                 content = f.read()
-            content = re.sub(r'(config LSM.*?)(default .*)(\n.*?help)',
-                           lambda m: m.group(1) + ('lockdown,baseband_guard' if 'lockdown' in m.group(2) and 'baseband_guard' not in m.group(2) else m.group(2)) + m.group(3),
-                           content, flags=re.DOTALL)
-            with open(kconfig_file, "w") as f:
-                f.write(content)
+            self._add_baseband_guard_to_lsm(kconfig_file, content)
+
+    def _add_baseband_guard_to_lsm(self, kconfig_file: Path, content: str) -> None:
+        """在 security/Kconfig 的 config LSM 默认列表中追加 baseband_guard。
+
+        逐行精确处理，避免用 re.DOTALL 全文件贪婪匹配导致 Kconfig 被写坏。
+        """
+        lines = content.split("\n")
+        in_lsm = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("config "):
+                in_lsm = (stripped == "config LSM")
+            elif in_lsm:
+                if line == stripped:
+                    in_lsm = False
+                elif stripped.startswith("default ") and "bpf" in stripped and "baseband_guard" not in stripped:
+                    lines[i] = line.replace(',bpf"', ',bpf,baseband_guard"', 1)
+        with open(kconfig_file, "w") as f:
+            f.write("\n".join(lines))
 
     def apply_susfs_patches(self):
         logger.info("=== 应用 SUSFS 补丁 ===")
@@ -298,7 +313,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             patch_file = common_dir / self.config.get_susfs_patch_filename()
             if patch_file.exists():
                 self._chdir(common_dir)
-                self._run_cmd(f"patch -p1 --fuzz=3 < {patch_file}", check=False)
+                self._run_cmd(f"patch -p1 --fuzz=3 < {patch_file}")
                 self._chdir(self.work_dir)
 
     def apply_sukisu_patches(self):
@@ -306,7 +321,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         self._chdir(self.work_dir / "common")
         hooks_patch = self.sukisu_patch_dir / "69_hide_stuff.patch"
         if hooks_patch.exists():
-            self._run_cmd(f"cp {hooks_patch} . && patch -p1 -F 3 < 69_hide_stuff.patch", check=False)
+            self._run_cmd(f"cp {hooks_patch} . && patch -p1 -F 3 < 69_hide_stuff.patch")
 
     def apply_zram_patches(self):
         if not self.config.use_zram:
@@ -325,7 +340,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         for patch in ["lz4kd.patch", "lz4k_oplus.patch"]:
             p = zram_patch_dir / patch
             if p.exists():
-                self._run_cmd(f"patch -p1 -F 3 < {p}", check=False)
+                self._run_cmd(f"patch -p1 -F 3 < {p}")
 
     def apply_task_mmu_fixes(self):
         logger.info("=== 应用 task_mmu.c 修复 ===")
